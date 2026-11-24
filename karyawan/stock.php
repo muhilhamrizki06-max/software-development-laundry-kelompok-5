@@ -1,6 +1,6 @@
 <?php
-require_once 'config/koneksi.php';
-include 'includes/header.php';
+require_once '../config/koneksi.php';
+include '../public/includes/header.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $act = $_POST['act'] ?? '';
@@ -127,4 +127,4 @@ $logs  = $conn->query("SELECT sm.*, ii.name AS item_name, ii.unit FROM stock_mov
     </aside>
   </div>
 </div>
-<?php include 'includes/footer.php'; ?>
+<?php include '../public/includes/footer.php'; ?>

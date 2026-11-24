@@ -1,6 +1,6 @@
 <?php
-require_once 'config/koneksi.php';
-include 'includes/header.php';
+require_once '../config/koneksi.php';
+include '../public/includes/header.php';
 
 $shift = $conn->query("SELECT * FROM cash_shifts WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1")->fetch_assoc();
 
@@ -31,7 +31,7 @@ $salesTunai = 0; $kasIn = 0; $kasOut = 0;
 if ($shift) {
     $openedAt = $shift['opened_at'];
     $sid = $shift['id'];
-    $salesTunai = (int)$conn->query("SELECT COALESCE(SUM(amount),0) t FROM orders WHERE payment='Tunai' AND created_at >= '$openedAt'")->fetch_assoc()['t'];
+    $salesTunai = (int)$conn->query("SELECT COALESCE(SUM(paid_amount),0) t FROM orders WHERE payment='Tunai' AND created_at >= '$openedAt'")->fetch_assoc()['t'];
     $kasIn      = (int)$conn->query("SELECT COALESCE(SUM(amount),0) t FROM cash_movements WHERE shift_id=$sid AND type='in'")->fetch_assoc()['t'];
     $kasOut     = (int)$conn->query("SELECT COALESCE(SUM(amount),0) t FROM cash_movements WHERE shift_id=$sid AND type='out'")->fetch_assoc()['t'];
 }
@@ -56,7 +56,7 @@ $history = $conn->query("SELECT * FROM cash_shifts ORDER BY id DESC LIMIT 10");
         <div style="background:linear-gradient(125deg,#173f34,#267157); color:#fff; padding:32px;">
           <p class="eyebrow" style="color:rgba(255,255,255,.6);">Opening kasir</p>
           <h3 style="font-size:22px; font-weight:800; margin-top:8px;">Hitung uang di laci sebelum transaksi pertama.</h3>
-          <p style="font-size:12px; color:rgba(255,255,255,.7); margin-top:10px;">Setelah shift dibuka, order Tunai dan arus kas manual otomatis masuk perhitungan saldo sistem.</p>
+          <p style="font-size:12px; color:rgba(255,255,255,.7); margin-top:10px;">Setelah shift dibuka, pembayaran Tunai dan arus kas manual otomatis masuk perhitungan saldo sistem.</p>
         </div>
       </section>
       <form method="POST" class="panel panel-pad">
@@ -148,4 +148,4 @@ $history = $conn->query("SELECT * FROM cash_shifts ORDER BY id DESC LIMIT 10");
     </div>
   </section>
 </div>
-<?php include 'includes/footer.php'; ?>
+<?php include '../public/includes/footer.php'; ?>
