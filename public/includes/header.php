@@ -17,7 +17,9 @@ $menu = [
     ['href' => '../owner/employees.php',  'file' => 'employees.php', 'label' => 'Karyawan',           'icon' => 'users',     'owner' => true],
     ['href' => '../ai/ai.php',            'file' => 'ai.php',        'label' => 'Analisis & AI',      'icon' => 'sparkle',   'owner' => false],
     ['href' => '../owner/license.php',    'file' => 'license.php',   'label' => 'Lisensi',            'icon' => 'check',     'owner' => true],
+    ['href' => '../owner/settings.php',   'file' => 'settings.php',  'label' => 'Pengaturan Toko',    'icon' => 'laundry',   'owner' => true],
 ];
+
 ?>
 <!DOCTYPE html>
 <html lang="id">

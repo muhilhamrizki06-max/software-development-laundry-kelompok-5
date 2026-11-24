@@ -155,24 +155,33 @@ foreach ($itemsList as $it) {
     $barisItemWa[] = "- {$it['name']} (" . (float)$it['quantity'] . " {$it['unit']}) = {$subItem}";
 }
 
+$toko = $conn->query("SELECT * FROM settings WHERE id = 1")->fetch_assoc();
+$namaToko   = $toko['shop_name'] ?? 'Laundria';
+$alamatToko = $toko['shop_address'] ?? '';
+$telpToko   = $toko['shop_phone'] ?? '';
+$footerNota = $toko['receipt_footer'] ?? 'Simpan nota ini sebagai bukti pengambilan.';
+
 $statusBayarWa = $sisaTagihan > 0 ? "Dibayar: " . money($order['paid_amount']) . " | Sisa: " . money($sisaTagihan) : "LUNAS";
 
-$teksNotaWa = "*LAUNDRIA*\n"
+$teksNotaWa = "*" . strtoupper($namaToko) . "*\n"
+    . ($alamatToko !== '' ? "{$alamatToko}\n" : "")
     . "Nota: *{$order['id']}*\n"
     . "Halo Kak *{$order['cname']}*, terima kasih sudah mempercayakan cucian Anda kepada kami.\n\n"
     . implode("\n", $barisItemWa) . "\n"
     . "Total: *" . money($order['amount']) . "* ({$statusBayarWa})\n"
     . "Estimasi selesai: " . date('d M Y', strtotime($order['due_date'])) . "\n"
     . (!empty($order['notes']) ? "Info: {$order['notes']}\n" : "")
-    . "\nSimpan pesan ini sebagai bukti pengambilan. Terima kasih!";
+    . "\n{$footerNota}";
 
-$teksSiapWa = "Halo Kak *{$order['cname']}*, cucian Anda dengan nomor nota *{$order['id']}* sudah *SIAP DIAMBIL* di Laundria.\n"
+$teksSiapWa = "Halo Kak *{$order['cname']}*, cucian Anda dengan nomor nota *{$order['id']}* sudah *SIAP DIAMBIL* di *{$namaToko}*.\n"
     . "Total: *" . money($order['amount']) . "* ({$statusBayarWa}).\n"
+    . ($alamatToko !== '' ? "Alamat: {$alamatToko}\n" : "")
     . "Silakan kunjungi outlet kami dengan menunjukkan nota ini. Terima kasih!";
 
 $linkWaNota = "https://wa.me/{$waNum}?text=" . rawurlencode($teksNotaWa);
 $linkWaSiap = "https://wa.me/{$waNum}?text=" . rawurlencode($teksSiapWa);
 ?>
+
 <div class="page">
   <div class="no-print" style="max-width:480px; margin:0 auto 16px; display:flex; justify-content:space-between; align-items:center;">
     <a href="nota.php" class="btn-secondary">← Daftar Nota</a>
@@ -241,8 +250,8 @@ $linkWaSiap = "https://wa.me/{$waNum}?text=" . rawurlencode($teksSiapWa);
       <div id="nota-badge-status" style="text-align:center; margin-top:18px;"><?= badge_status($order['status']) ?></div>
 
       <p style="text-align:center; font-size:10px; color:#8a9d90; margin-top:20px; line-height:1.6;">
-        Terima kasih telah mempercayakan cucian Anda.<br>
-        Simpan nota ini sebagai bukti pengambilan.
+        <?= htmlspecialchars($namaToko) ?><?= $alamatToko ? ' · ' . htmlspecialchars($alamatToko) : '' ?><?= $telpToko ? ' (' . htmlspecialchars($telpToko) . ')' : '' ?><br>
+        <?= nl2br(htmlspecialchars($footerNota)) ?>
       </p>
     </div>
 
