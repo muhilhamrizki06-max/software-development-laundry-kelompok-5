@@ -15,7 +15,7 @@ $menu = [
     ['href' => '../owner/expenses.php',   'file' => 'expenses.php',  'label' => 'Pengeluaran',        'icon' => 'money',     'owner' => true],
     ['href' => '../owner/reports.php',    'file' => 'reports.php',   'label' => 'Laporan',            'icon' => 'reports',   'owner' => true],
     ['href' => '../owner/employees.php',  'file' => 'employees.php', 'label' => 'Karyawan',           'icon' => 'users',     'owner' => true],
-    ['href' => '../ai/ai.php',            'file' => 'ai.php',        'label' => 'Analisis & AI',      'icon' => 'sparkle',   'owner' => false],
+    ['href' => '../ai/ai.php',            'file' => 'ai.php',        'label' => 'Analisis & AI',      'icon' => 'sparkle',   'owner' => true],
     ['href' => '../owner/license.php',    'file' => 'license.php',   'label' => 'Lisensi',            'icon' => 'check',     'owner' => true],
     ['href' => '../owner/settings.php',   'file' => 'settings.php',  'label' => 'Pengaturan Toko',    'icon' => 'laundry',   'owner' => true],
 ];
