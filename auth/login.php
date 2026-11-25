@@ -1,94 +1,144 @@
 <?php
 require_once '../config/koneksi.php';
-require_once '../public/includes/ui.php';
+include '../public/includes/header.php';
 
-if (isset($_SESSION['user'])) {
-    header("Location: ../karyawan/index.php");
-    exit;
+if ($role !== 'owner') {
+    exit('<div class="page"><div class="alert alert-danger">Halaman ini khusus untuk Owner.</div></div>');
 }
 
 $err = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['email'] ?? '');
-    $pass  = $_POST['password'] ?? '';
+    $act = $_POST['act'] ?? '';
+    if ($act === 'add') {
+        $name = trim($_POST['name']);
+        $email = trim($_POST['email']);
+        $pass = password_hash($_POST['password'], PASSWORD_DEFAULT);
 
-    $stmt = $conn->prepare("SELECT * FROM users WHERE email = ? LIMIT 1");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $u = $stmt->get_result()->fetch_assoc();
-
-    if ($u && password_verify($pass, $u['password'])) {
-        if ((int)$u['active'] !== 1) {
-            $err = "Akun Anda dinonaktifkan oleh Owner.";
+        $cek = $conn->prepare("SELECT id FROM users WHERE email = ?");
+        $cek->bind_param("s", $email);
+        $cek->execute();
+        if ($cek->get_result()->num_rows > 0) {
+            $err = "Email sudah terdaftar di sistem.";
         } else {
-            $_SESSION['user'] = [
-                'id'    => $u['id'],
-                'name'  => $u['name'],
-                'email' => $u['email'],
-                'role'  => $u['role']
-            ];
-            header("Location: ../karyawan/index.php");
+            $stmt = $conn->prepare("INSERT INTO users (name, email, password, role, position, active) VALUES (?, ?, ?, 'employee', 'Karyawan', 1)");
+            $stmt->bind_param("sss", $name, $email, $pass);
+            $stmt->execute();
+            header("Location: employees.php?msg=added");
             exit;
         }
-    } else {
-        $err = "Email atau kata sandi salah.";
+    } elseif ($act === 'toggle') {
+        $uid = (int)$_POST['user_id'];
+        $stmt = $conn->prepare("UPDATE users SET active = IF(active=1, 0, 1) WHERE id = ? AND role = 'employee'");
+        $stmt->bind_param("i", $uid);
+        $stmt->execute();
+        header("Location: employees.php");
+        exit;
+    } elseif ($act === 'delete') {
+        $uid = (int)$_POST['user_id'];
+        $stmt = $conn->prepare("DELETE FROM users WHERE id = ? AND role = 'employee'");
+        $stmt->bind_param("i", $uid);
+        $stmt->execute();
+        header("Location: employees.php?msg=deleted");
+        exit;
     }
 }
+
+$emps = $conn->query("SELECT * FROM users WHERE role = 'employee' ORDER BY id ASC")->fetch_all(MYSQLI_ASSOC);
+$activeCnt = count(array_filter($emps, fn($e) => $e['active'] == 1));
 ?>
-<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Masuk — Laundria</title>
-  <link rel="stylesheet" href="../public/assets/css/style.css">
-</head>
-<body style="min-height:100vh; display:grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); background:#f4f7f5;">
-  <!-- Panel Kiri: Hero Visual -->
-  <div style="background:radial-gradient(circle at 80% 18%, rgba(237,177,113,.22), transparent 32%), linear-gradient(145deg, #163d33, #236952); color:#ffffff; padding:48px 44px; display:flex; flex-direction:column; justify-content:space-between;">
-    <div><?= logo(true) ?></div>
-    <div style="max-width:440px; margin:40px 0;">
-      <p style="font-size:11px; font-weight:800; letter-spacing:0.14em; color:#edbc89; text-transform:uppercase; margin-bottom:12px;">Sistem Manajemen Laundry & AI</p>
-      <h1 style="font-size:32px; font-weight:800; line-height:1.18; letter-spacing:-0.02em;">
-        Kelola cucian lebih rapi,<br>
-        <span style="font-family:'DM Serif Display', serif; font-style:italic; font-weight:400; color:#edbc89;">keputusan bisnis</span> lebih pasti.
-      </h1>
-      <p style="font-size:13px; color:rgba(255,255,255,.72); margin-top:16px; line-height:1.6;">
-        Pantau omzet secara real-time, atur hak akses owner dan karyawan, serta dapatkan peringatan otomatis saat tren omzet berubah[cite: 2].
-      </p>
-    </div>
-    <div style="font-size:11px; color:rgba(255,255,255,.55);">
-      &copy; <?= date('Y') ?> Laundria — Teknik Informatika UNP Kediri[cite: 2]
+<div class="page">
+  <div class="page-header">
+    <div>
+      <p class="eyebrow">Tim / Karyawan</p>
+      <h2 class="page-title">Tim kecil, kerja lebih teratur.</h2>
+      <p class="page-desc">Akun karyawan yang ditambahkan di sini dapat langsung digunakan untuk login operasional.</p>
     </div>
   </div>
 
-  <!-- Panel Kanan: Form Login -->
-  <div style="display:grid; place-items:center; padding:32px 24px; background:#ffffff;">
-    <div style="width:100%; max-width:380px;">
-      <p class="eyebrow">Akses Sistem</p>
-      <h2 style="font-size:24px; font-weight:800; color:#184234;">Masuk ke akun Anda.</h2>
-      <p style="font-size:12.5px; color:#82968a; margin:6px 0 24px;">Gunakan kredensial Owner atau Karyawan yang terdaftar[cite: 2].</p>
+  <?php if (isset($_GET['msg']) && $_GET['msg'] === 'added'): ?>
+    <div class="alert alert-success">Karyawan baru berhasil ditambahkan!</div>
+  <?php elseif (isset($_GET['msg']) && $_GET['msg'] === 'deleted'): ?>
+    <div class="alert alert-warning">Akun karyawan berhasil dihapus secara permanen.</div>
+  <?php endif; ?>
+  <?php if ($err): ?><div class="alert alert-danger"><?= $err ?></div><?php endif; ?>
 
-      <?php if ($err): ?><div class="alert alert-danger"><?= htmlspecialchars($err) ?></div><?php endif; ?>
-
-      <form method="POST">
-        <div class="form-group">
-          <label class="form-label">Alamat email</label>
-          <input type="email" name="email" class="form-input" placeholder="owner@laundria.id" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Kata sandi</label>
-          <input type="password" name="password" class="form-input" placeholder="••••••••" required>
-        </div>
-        <button type="submit" class="btn-primary btn-block" style="margin-top:8px;">Masuk ke ruang kerja <?= icon('arrow', 15) ?></button>
-      </form>
-
-      <div style="margin-top:24px; padding:14px 16px; border-radius:12px; background:#f6faf7; border:1px dashed #d3e2d8; font-size:11.5px; color:#698276; line-height:1.6;">
-        <b>Akun Demo Pengujian:</b><br>
-        Owner: <code>owner@laundria.id</code> / <code>password</code><br>
-        Karyawan: <code>siti@laundria.id</code> / <code>password</code>
+  <div class="grid-2-left">
+    <form method="POST" class="panel panel-pad">
+      <input type="hidden" name="act" value="add">
+      <h3 class="section-title">Tambah karyawan</h3>
+      <div class="form-group" style="margin-top:16px;">
+        <label class="form-label">Nama lengkap</label>
+        <input type="text" name="name" class="form-input" placeholder="Contoh: Rina Wulandari" required>
       </div>
-    </div>
+      <div class="form-group">
+        <label class="form-label">Email login</label>
+        <input type="email" name="email" class="form-input" placeholder="rina@laundria.id" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Kata sandi login</label>
+        <div style="position:relative;">
+          <input type="password" name="password" id="inp-emp-pass" placeholder="Masukkan kata sandi" class="form-input" style="padding-right:38px;" required>
+          <button type="button" onclick="toggleEmpPass()" title="Lihat/Sembunyikan sandi" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:#758c82; cursor:pointer; padding:4px; display:grid; place-items:center;">
+            <svg id="eye-emp-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <button type="submit" class="btn-primary btn-block"><?= icon('plus', 16) ?> Tambah karyawan</button>
+    </form>
+
+    <section class="panel">
+      <div class="panel-pad">
+        <h3 class="section-title"><?= $activeCnt ?> karyawan aktif</h3>
+        <p class="section-sub">Nonaktifkan sementara atau hapus permanen akun yang sudah tidak dipakai.</p>
+      </div>
+      <div>
+        <?php if (empty($emps)): ?>
+          <div style="padding:24px; text-align:center; font-size:12px; color:#8ca092; border-top:1px solid #edf1ed;">
+            Belum ada akun karyawan terdaftar.
+          </div>
+        <?php else: foreach ($emps as $e): ?>
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:14px; padding:18px 24px; border-top:1px solid #edf1ed;">
+            <span style="width:40px; height:40px; border-radius:50%; background:#ecf4ed; color:#5b8669; font-size:12px; font-weight:800; display:grid; place-items:center;">
+              <?= strtoupper(substr($e['name'], 0, 2)) ?>
+            </span>
+            <div style="flex:1; min-width:180px;">
+              <div style="font-size:13px; font-weight:800;"><?= htmlspecialchars($e['name']) ?></div>
+              <div style="font-size:11px; color:#8ca092; margin-top:2px;"><?= htmlspecialchars($e['email']) ?></div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <form method="POST">
+                <input type="hidden" name="act" value="toggle">
+                <input type="hidden" name="user_id" value="<?= $e['id'] ?>">
+                <button type="submit" class="badge <?= $e['active'] ? 'badge-green' : 'badge-gray' ?>" style="border:none; cursor:pointer;">
+                  <?= $e['active'] ? 'Aktif · nonaktifkan' : 'Nonaktif · aktifkan' ?>
+                </button>
+              </form>
+              <form method="POST" onsubmit="return confirm('Hapus permanen akun <?= htmlspecialchars(addslashes($e['name'])) ?>? Tindakan ini tidak bisa dibatalkan.')">
+                <input type="hidden" name="act" value="delete">
+                <input type="hidden" name="user_id" value="<?= $e['id'] ?>">
+                <button type="submit" class="badge badge-red" style="border:none; cursor:pointer;" title="Hapus permanen">
+                  <?= icon('close', 12) ?> Hapus
+                </button>
+              </form>
+            </div>
+          </div>
+        <?php endforeach; endif; ?>
+      </div>
+    </section>
   </div>
-</body>
-</html>
+</div>
+
+<script>
+function toggleEmpPass() {
+  const inp = document.getElementById('inp-emp-pass');
+  const icon = document.getElementById('eye-emp-icon');
+  const isPass = inp.type === 'password';
+  inp.type = isPass ? 'text' : 'password';
+  icon.innerHTML = isPass
+    ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+    : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+}
+</script>
+<?php include '../public/includes/footer.php'; ?>
