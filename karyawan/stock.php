@@ -8,6 +8,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("INSERT INTO inventory_items (name, category, unit, quantity, minimum) VALUES (?, ?, ?, ?, ?)");
         $stmt->bind_param("sssdd", $_POST['name'], $_POST['category'], $_POST['unit'], $_POST['quantity'], $_POST['minimum']);
         $stmt->execute();
+        header("Location: stock.php?msg=added");
+        exit;
     } elseif ($act === 'move') {
         $id   = (int)$_POST['item_id'];
         $type = $_POST['type'];
@@ -21,9 +23,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->bind_param("isdddsss", $id, $type, $qty, $before, $after, $_POST['note'], $user['name'], $role);
             $stmt->execute();
         }
+        header("Location: stock.php?msg=moved");
+        exit;
+    } elseif ($act === 'delete') {
+        $id = (int)$_POST['item_id'];
+        $stmt = $conn->prepare("DELETE FROM inventory_items WHERE id = ?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        header("Location: stock.php?msg=deleted");
+        exit;
     }
-    header("Location: stock.php");
-    exit;
 }
 
 $items = $conn->query("SELECT * FROM inventory_items ORDER BY name ASC")->fetch_all(MYSQLI_ASSOC);
@@ -34,9 +43,17 @@ $logs  = $conn->query("SELECT sm.*, ii.name AS item_name, ii.unit FROM stock_mov
     <div>
       <p class="eyebrow">Operasional / Persediaan</p>
       <h2 class="page-title">Stok terjaga, layanan lancar.</h2>
-      <p class="page-desc">Pantau persediaan bahan cuci dan catat mutasi masuk/keluar.</p>
+      <p class="page-desc">Pantau persediaan bahan cuci, catat mutasi masuk/keluar, atau hapus item yang tidak dipakai.</p>
     </div>
   </div>
+
+  <?php if (isset($_GET['msg']) && $_GET['msg'] === 'deleted'): ?>
+    <div class="alert alert-warning">Barang persediaan beserta riwayat mutasinya berhasil dihapus.</div>
+  <?php elseif (isset($_GET['msg']) && $_GET['msg'] === 'added'): ?>
+    <div class="alert alert-success">Barang persediaan baru berhasil ditambahkan.</div>
+  <?php elseif (isset($_GET['msg']) && $_GET['msg'] === 'moved'): ?>
+    <div class="alert alert-success">Mutasi stok berhasil dicatat.</div>
+  <?php endif; ?>
 
   <div class="grid-2-col">
     <div style="display:flex; flex-direction:column; gap:20px;">
@@ -44,9 +61,13 @@ $logs  = $conn->query("SELECT sm.*, ii.name AS item_name, ii.unit FROM stock_mov
         <div class="panel-pad"><h3 class="section-title">Daftar barang persediaan</h3></div>
         <div class="table-wrap">
           <table class="data-table">
-            <thead><tr><th>Nama Barang</th><th>Kategori</th><th>Stok Tersedia</th><th>Batas Min.</th><th>Status</th></tr></thead>
+            <thead>
+              <tr><th>Nama Barang</th><th>Kategori</th><th>Stok Tersedia</th><th>Batas Min.</th><th>Status</th><th>Aksi</th></tr>
+            </thead>
             <tbody>
-              <?php foreach ($items as $i):
+              <?php if (empty($items)): ?>
+                <tr><td colspan="6" style="text-align:center; padding:24px; color:#81958b;">Belum ada data barang persediaan.</td></tr>
+              <?php else: foreach ($items as $i):
                 $st = $i['quantity'] <= 0 ? 'Habis' : ($i['quantity'] <= $i['minimum'] ? 'Menipis' : 'Aman');
               ?>
                 <tr>
@@ -55,8 +76,17 @@ $logs  = $conn->query("SELECT sm.*, ii.name AS item_name, ii.unit FROM stock_mov
                   <td><b><?= (float)$i['quantity'] ?></b> <?= $i['unit'] ?></td>
                   <td><?= (float)$i['minimum'] ?> <?= $i['unit'] ?></td>
                   <td><?= badge_status($st) ?></td>
+                  <td>
+                    <form method="POST" onsubmit="return confirm('Hapus permanen barang <?= htmlspecialchars(addslashes($i['name'])) ?>? Riwayat mutasi barang ini juga akan terhapus.')">
+                      <input type="hidden" name="act" value="delete">
+                      <input type="hidden" name="item_id" value="<?= $i['id'] ?>">
+                      <button type="submit" class="icon-btn" style="width:32px; height:32px;" title="Hapus barang">
+                        <?= icon('close', 14) ?>
+                      </button>
+                    </form>
+                  </td>
                 </tr>
-              <?php endforeach; ?>
+              <?php endforeach; endif; ?>
             </tbody>
           </table>
         </div>
@@ -68,7 +98,9 @@ $logs  = $conn->query("SELECT sm.*, ii.name AS item_name, ii.unit FROM stock_mov
           <table class="data-table">
             <thead><tr><th>Barang</th><th>Mutasi</th><th>Stok Akhir</th><th>Catatan</th><th>Petugas</th></tr></thead>
             <tbody>
-              <?php while ($l = $logs->fetch_assoc()): ?>
+              <?php if ($logs->num_rows === 0): ?>
+                <tr><td colspan="5" style="text-align:center; padding:24px; color:#81958b;">Belum ada riwayat mutasi stok.</td></tr>
+              <?php else: while ($l = $logs->fetch_assoc()): ?>
                 <tr>
                   <td style="font-weight:700;"><?= htmlspecialchars($l['item_name']) ?></td>
                   <td style="font-weight:800; color:<?= $l['type']==='in' ? '#1f7559' : '#b46d32' ?>;">
@@ -78,7 +110,7 @@ $logs  = $conn->query("SELECT sm.*, ii.name AS item_name, ii.unit FROM stock_mov
                   <td><?= htmlspecialchars($l['note']) ?></td>
                   <td><?= htmlspecialchars($l['actor']) ?></td>
                 </tr>
-              <?php endwhile; ?>
+              <?php endwhile; endif; ?>
             </tbody>
           </table>
         </div>
@@ -95,7 +127,7 @@ $logs  = $conn->query("SELECT sm.*, ii.name AS item_name, ii.unit FROM stock_mov
         </div>
         <div class="form-group">
           <label class="form-label">Pilih barang</label>
-          <select name="item_id" class="form-input">
+          <select name="item_id" class="form-input" <?= empty($items) ? 'disabled' : '' ?>>
             <?php foreach ($items as $i): ?>
               <option value="<?= $i['id'] ?>"><?= htmlspecialchars($i['name']) ?> (Sisa: <?= (float)$i['quantity'] ?> <?= $i['unit'] ?>)</option>
             <?php endforeach; ?>
@@ -109,7 +141,7 @@ $logs  = $conn->query("SELECT sm.*, ii.name AS item_name, ii.unit FROM stock_mov
           <label class="form-label">Catatan</label>
           <input type="text" name="note" placeholder="Contoh: Beli dari supplier / Dipakai cuci" class="form-input" required>
         </div>
-        <button type="submit" class="btn-primary btn-block"><?= icon('check', 16) ?> Simpan mutasi stok</button>
+        <button type="submit" class="btn-primary btn-block" <?= empty($items) ? 'disabled' : '' ?>><?= icon('check', 16) ?> Simpan mutasi stok</button>
       </form>
 
       <form method="POST" class="panel panel-pad">

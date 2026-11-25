@@ -208,7 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
         <div class="form-group" style="margin-top:14px;">
           <label class="form-label">Bayar sekarang / DP (Rp)</label>
-          <input type="number" name="paid_amount" id="inp-dp" min="0" step="1000" class="form-input" placeholder="Kosongkan jika lunas / bayar nanti" oninput="hitungTotal()">
+          <input type="number" name="paid_amount" id="inp-dp" min="0" step="1000" class="form-input" placeholder="Kosongkan jika bayar nanti" oninput="hitungTotal()">
         </div>
         <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:14px;">
           <span style="color:#7b9187;">Sisa tagihan</span>
