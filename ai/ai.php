@@ -2,6 +2,10 @@
 require_once '../config/koneksi.php';
 include '../public/includes/header.php';
 
+if ($role !== 'owner') {
+    exit('<div class="page"><div class="alert alert-danger">Halaman Analisis & AI hanya dapat diakses oleh Owner.</div></div>');
+}
+
 $cfg = $conn->query("SELECT * FROM settings WHERE id = 1")->fetch_assoc();
 $isPremium = ($role === 'owner' && ($cfg['plan'] ?? 'basic') === 'premium');
 
