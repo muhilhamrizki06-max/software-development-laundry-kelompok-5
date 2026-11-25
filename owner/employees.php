@@ -68,15 +68,22 @@ $activeCnt = count(array_filter($emps, fn($e) => $e['active'] == 1));
       <h3 class="section-title">Tambah karyawan</h3>
       <div class="form-group" style="margin-top:16px;">
         <label class="form-label">Nama lengkap</label>
-        <input type="text" name="name" class="form-input" required>
+        <input type="text" name="name" class="form-input" placeholder="..." required>
       </div>
       <div class="form-group">
         <label class="form-label">Email login</label>
-        <input type="email" name="email" class="form-input" required>
+        <input type="email" name="email" class="form-input" placeholder="rina@laundria.id" required>
       </div>
       <div class="form-group">
         <label class="form-label">Kata sandi login</label>
-        <input type="password" name="password" value="laundria2025" class="form-input" required>
+        <div style="position:relative;">
+          <input type="password" name="password" id="inp-emp-pass" placeholder="Masukkan kata sandi" class="form-input" style="padding-right:38px;" required>
+          <button type="button" onclick="toggleEmpPass()" title="Lihat/Sembunyikan sandi" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:#758c82; cursor:pointer; padding:4px; display:grid; place-items:center;">
+            <svg id="eye-emp-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
       </div>
       <button type="submit" class="btn-primary btn-block"><?= icon('plus', 16) ?> Tambah karyawan</button>
     </form>
@@ -122,4 +129,16 @@ $activeCnt = count(array_filter($emps, fn($e) => $e['active'] == 1));
     </section>
   </div>
 </div>
+
+<script>
+function toggleEmpPass() {
+  const inp = document.getElementById('inp-emp-pass');
+  const icon = document.getElementById('eye-emp-icon');
+  const isPass = inp.type === 'password';
+  inp.type = isPass ? 'text' : 'password';
+  icon.innerHTML = isPass
+    ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+    : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+}
+</script>
 <?php include '../public/includes/footer.php'; ?>
