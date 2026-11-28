@@ -2,15 +2,13 @@
 require_once '../config/koneksi.php';
 include '../public/includes/header.php';
 
-if ($role !== 'owner') {
-    exit('<div class="page"><div class="alert alert-danger">Halaman Analisis & AI hanya dapat diakses oleh Owner.</div></div>');
-}
+require_owner_view($role);
 
 $cfg = $conn->query("SELECT * FROM settings WHERE id = 1")->fetch_assoc();
-$isPremium = ($role === 'owner' && ($cfg['plan'] ?? 'basic') === 'premium');
+$isPremium = (($cfg['plan'] ?? 'basic') === 'premium');
 
-$omzet7HariLalu = (int)$conn->query("SELECT COALESCE(SUM(amount),0) t FROM orders WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)")->fetch_assoc()['t'];
-$omzet7HariPrev = (int)$conn->query("SELECT COALESCE(SUM(amount),0) t FROM orders WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 14 DAY) AND created_at < DATE_SUB(CURDATE(), INTERVAL 7 DAY)")->fetch_assoc()['t'];
+$omzet7HariLalu = (int)$conn->query("SELECT COALESCE(SUM(amount),0) t FROM orders WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)")->fetch_assoc()['t'];
+$omzet7HariPrev = (int)$conn->query("SELECT COALESCE(SUM(amount),0) t FROM orders WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 13 DAY) AND created_at < DATE_SUB(CURDATE(), INTERVAL 6 DAY)")->fetch_assoc()['t'];
 
 $persenTurun = 0;
 $omzetTurun = false;
@@ -39,6 +37,7 @@ $eligible = $custRes->fetch_all(MYSQLI_ASSOC);
 $draft = $_POST['draft'] ?? '';
 $sentMsg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf_page();
     if (isset($_POST['generate']) && $isPremium) {
         if ($audience === 'ready') {
             $draft = "Halo Kak {nama}, cucian Anda di Laundria sudah bersih dan SIAP DIAMBIL. Silakan kunjungi outlet dengan membawa nota. Terima kasih!";
@@ -96,16 +95,12 @@ $riwayatInsight = $conn->query("SELECT * FROM ai_insight ORDER BY id DESC LIMIT 
       <div class="alert alert-success" style="margin:0;">Semua order aktif sesuai jadwal estimasi selesai.</div>
     <?php else: while ($lo = $lateOrders->fetch_assoc()): ?>
       <div class="alert alert-warning" style="margin-bottom:8px;">
-        <b><?= $lo['id'] ?> (<?= htmlspecialchars($lo['cname']) ?>)</b> — Status: <?= $lo['status'] ?>, estimasi selesai <?= date('d M Y', strtotime($lo['due_date'])) ?>.
+        <b><?= htmlspecialchars($lo['id']) ?> (<?= htmlspecialchars($lo['cname']) ?>)</b> — Status: <?= htmlspecialchars($lo['status']) ?>, estimasi selesai <?= date('d M Y', strtotime($lo['due_date'])) ?>.
       </div>
     <?php endwhile; endif; ?>
   </section>
 
-  <?php if ($role !== 'owner'): ?>
-    <div class="panel panel-pad" style="font-size:12px; color:#7c9584;">
-      Anda masuk sebagai karyawan. Prediksi omzet, saran strategis, dan broadcast pesan hanya dapat diakses oleh Owner dengan lisensi Premium.
-    </div>
-  <?php elseif (!$isPremium): ?>
+  <?php if (!$isPremium): ?>
     <div class="panel panel-pad" style="background:#fffaf4; border-color:#ecddc9;">
       <h3 style="font-size:16px; font-weight:800; color:#73512e;">Fitur Khusus Lisensi Premium *</h3>
       <p style="font-size:12px; color:#9a856e; margin:8px 0 16px;">Aktifkan paket Premium di halaman Lisensi untuk membuka Prediksi Omzet, Saran Bisnis, dan Draf Broadcast otomatis.</p>
@@ -123,6 +118,7 @@ $riwayatInsight = $conn->query("SELECT * FROM ai_insight ORDER BY id DESC LIMIT 
           <b>Rekomendasi Keputusan:</b> Pastikan stok deterjen dan parfum mencukupi untuk proyeksi omzet bulan depan, serta kirim pesan pengingat ke pelanggan lama.
         </div>
         <form method="POST">
+          <?= csrf_field() ?>
           <button type="submit" name="generate" class="btn-secondary btn-block"><?= icon('sparkle', 15) ?> Generate Draf Broadcast AI</button>
         </form>
       </section>
@@ -142,6 +138,7 @@ $riwayatInsight = $conn->query("SELECT * FROM ai_insight ORDER BY id DESC LIMIT 
         </form>
 
         <form method="POST">
+          <?= csrf_field() ?>
           <div class="form-group">
             <label class="form-label">Isi Pesan ({nama} otomatis diganti nama pelanggan)</label>
             <textarea name="draft" rows="4" class="form-input" placeholder="Klik 'Generate Draf Broadcast AI' atau tulis pesan Anda..."><?= htmlspecialchars($draft) ?></textarea>
@@ -149,7 +146,7 @@ $riwayatInsight = $conn->query("SELECT * FROM ai_insight ORDER BY id DESC LIMIT 
           <?php if (empty($cfg['messaging'])): ?>
             <div class="alert alert-warning">Aktifkan layanan pesan di halaman <a href="../owner/license.php" style="text-decoration:underline;">Lisensi</a> untuk mengirim broadcast.</div>
           <?php endif; ?>
-          <?php if ($sentMsg): ?><div class="alert alert-success"><?= $sentMsg ?></div><?php endif; ?>
+          <?php if ($sentMsg): ?><div class="alert alert-success"><?= htmlspecialchars($sentMsg) ?></div><?php endif; ?>
           <div style="display:grid; grid-template-columns: 110px 1fr; gap:8px;">
             <button type="button" id="btn-salin-draft" class="btn-secondary">Salin</button>
             <button type="submit" name="send_sim" class="btn-primary" <?= (empty($cfg['messaging']) || empty($eligible) || trim($draft)==='') ? 'disabled' : '' ?>>
