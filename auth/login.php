@@ -9,29 +9,34 @@ if (isset($_SESSION['user'])) {
 
 $err = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['email'] ?? '');
-    $pass  = $_POST['password'] ?? '';
-
-    $stmt = $conn->prepare("SELECT * FROM users WHERE email = ? LIMIT 1");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $u = $stmt->get_result()->fetch_assoc();
-
-    if ($u && password_verify($pass, $u['password'])) {
-        if ((int)$u['active'] !== 1) {
-            $err = "Akun Anda dinonaktifkan oleh Owner.";
-        } else {
-            $_SESSION['user'] = [
-                'id'    => $u['id'],
-                'name'  => $u['name'],
-                'email' => $u['email'],
-                'role'  => $u['role']
-            ];
-            header("Location: ../karyawan/index.php");
-            exit;
-        }
+    if (!verify_csrf()) {
+        $err = "Sesi formulir kedaluwarsa. Silakan coba masuk kembali.";
     } else {
-        $err = "Email atau kata sandi salah.";
+        $email = trim($_POST['email'] ?? '');
+        $pass  = $_POST['password'] ?? '';
+
+        $stmt = $conn->prepare("SELECT * FROM users WHERE email = ? LIMIT 1");
+        $stmt->bind_param("s", $email);
+        $stmt->execute();
+        $u = $stmt->get_result()->fetch_assoc();
+
+        if ($u && password_verify($pass, $u['password'])) {
+            if ((int)$u['active'] !== 1) {
+                $err = "Akun Anda dinonaktifkan oleh Owner.";
+            } else {
+                session_regenerate_id(true);
+                $_SESSION['user'] = [
+                    'id'    => $u['id'],
+                    'name'  => $u['name'],
+                    'email' => $u['email'],
+                    'role'  => $u['role']
+                ];
+                header("Location: ../karyawan/index.php");
+                exit;
+            }
+        } else {
+            $err = "Email atau kata sandi salah.";
+        }
     }
 }
 ?>
@@ -242,7 +247,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
 <div class="login-wrap">
-  <!-- Bagian Kiri -->
+
   <div class="login-left">
     <div style="display:flex; align-items:center; gap:11px;">
       <span style="width:36px; height:36px; border-radius:10px; background:#237458; color:#fff; display:grid; place-items:center; box-shadow:0 4px 12px rgba(35,116,88,.25);">
@@ -308,6 +313,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <?php if ($err): ?><div class="alert alert-danger"><?= htmlspecialchars($err) ?></div><?php endif; ?>
 
       <form method="POST">
+        <?= csrf_field() ?>
         <div class="form-group" style="margin-bottom:10px;">
           <label class="form-label">Masuk sebagai</label>
           <div class="role-grid">
