@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initLiveSearchNota();
   initAjaxStatusNota();
   initSalinBroadcast();
+  initConfirmForms();
 });
 
 function showToast(pesan, tipe = 'success') {
@@ -55,7 +56,7 @@ function initAjaxStatusNota() {
       const res = await fetch(window.location.href, { method: 'POST', body: formData });
       const data = await res.json();
 
-      if (data.ok) {
+      if (res.ok && data.ok) {
         const badgeBox = document.getElementById('nota-badge-status');
         if (badgeBox && data.badge_html) badgeBox.innerHTML = data.badge_html;
         showToast('Status cucian diperbarui menjadi: ' + data.status);
@@ -84,5 +85,16 @@ function initSalinBroadcast() {
     navigator.clipboard.writeText(txtDraft.value).then(() => {
       showToast('Draf pesan disalin ke clipboard!');
     });
+  });
+}
+
+function initConfirmForms() {
+  document.addEventListener('submit', (e) => {
+    const form = e.target;
+    if (form instanceof HTMLFormElement && form.dataset.confirm) {
+      if (!window.confirm(form.dataset.confirm)) {
+        e.preventDefault();
+      }
+    }
   });
 }
