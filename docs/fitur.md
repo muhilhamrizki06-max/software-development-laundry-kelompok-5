@@ -1,36 +1,30 @@
-# Daftar Fitur Berdasarkan Proposal
+# Daftar Fitur & Status Implementasi
+
+Pemetaan kebutuhan dari proposal terhadap implementasi aktual saat ini:
 
 ## Umum
-- FR-01 Login/logout.
-- FR-02 Pembatasan akses owner/karyawan/admin.
-- FR-03 Registrasi owner dan paket gratis awal.
-- FR-04 Ubah/reset password.
+- **FR-01 Login/logout:** Diimplementasikan (`auth/login.php`, `auth/logout.php`) dengan `password_verify` dan regenerasi session ID.
+- **FR-02 Pembatasan akses owner/karyawan:** Diimplementasikan di sidebar (`public/includes/header.php`) dan verifikasi sisi server pada seluruh halaman `owner/*` dan `ai/ai.php`.
+- **FR-03 Registrasi owner & FR-04 Ubah/reset password:** Belum diimplementasikan (saat ini pembuatan akun baru dikelola oleh Owner untuk karyawan di `owner/employees.php`).
 
 ## Owner
-- FR-05 Dashboard real-time (target pembaruan 30–60 detik).
-- FR-06 Laporan omzet, pengeluaran, dan laba.
-- FR-07 Pengelolaan layanan dan harga.
-- FR-08 Pengelolaan akun karyawan.
-- FR-09 Pencatatan pengeluaran.
-- FR-10 Pemantauan aktivitas.
+- **FR-05 Dashboard:** Diimplementasikan (`karyawan/index.php`) menampilkan omzet hari ini, estimasi laba, grafik 7 hari terakhir, dan ringkasan peringatan.
+- **FR-06 Laporan omzet, pengeluaran, dan laba:** Diimplementasikan (`owner/reports.php`, `owner/export_csv.php`) dengan filter status/periode/pencarian dan ekspor CSV.
+- **FR-07 Pengelolaan layanan dan harga:** Diimplementasikan (`owner/settings.php`) bersama pengaturan profil toko & footer struk.
+- **FR-08 Pengelolaan akun karyawan:** Diimplementasikan (`owner/employees.php`) untuk tambah, aktif/nonaktifkan, dan hapus karyawan.
+- **FR-09 Pencatatan pengeluaran:** Diimplementasikan (`owner/expenses.php`).
+- **FR-10 Pemantauan aktivitas:** Tercakup sebagian melalui riwayat shift kasir (`karyawan/cash.php`) dan riwayat mutasi stok (`karyawan/stock.php`).
 
-## Karyawan
-- FR-11 Input order, hitung total, cetak nota.
-- FR-12 Pembaruan status order dan pembayaran.
-- FR-13 Pengelolaan pelanggan.
-- FR-14 Pencarian order.
-- FR-15 Pemberitahuan cucian siap diambil.
+## Karyawan / Operasional
+- **FR-11 Input order, hitung total, cetak nota:** Diimplementasikan (`karyawan/orders.php`, `karyawan/nota.php`) termasuk paket kecepatan, parfum, DP, dan cetak struk.
+- **FR-12 Pembaruan status order dan pembayaran:** Diimplementasikan (`karyawan/nota.php`) via AJAX update status dan pelunasan tagihan yang terhubung ke shift kas.
+- **FR-13 Pengelolaan pelanggan:** Pelanggan baru dapat ditambahkan langsung saat input order (`karyawan/orders.php`).
+- **FR-14 Pencarian order:** Diimplementasikan (`karyawan/nota.php`, `owner/reports.php`) via filter server dan live search di tabel.
+- **FR-15 Pemberitahuan cucian siap diambil:** Diimplementasikan melalui tombol **WA Siap Ambil** (`wa.me`) di `karyawan/nota.php`.
+- **Tambahan Operasional:** Shift & kas harian (`karyawan/cash.php`) serta manajemen stok bahan (`karyawan/stock.php`).
 
 ## Lisensi dan AI
-- FR-16 Penerbitan kode lisensi oleh admin sistem.
-- FR-17 Aktivasi dan validasi lisensi.
-- FR-18 Pembukaan fitur berdasarkan paket.
-- FR-19 Peringatan penurunan omzet lebih dari 20% dibanding rata-rata empat minggu sebelumnya (setelah data minimal empat minggu tersedia).
-- FR-20 Saran/solusi AI (premium).
-- FR-21 Prediksi omzet (premium; data minimal delapan minggu).
-- FR-22 Draf broadcast customer (premium).
-- FR-23 Riwayat insight.
-
-## Paket
-Gratis: operasional, dashboard/laporan, pembatasan akses, peringatan penurunan omzet.
-Premium: seluruh fitur gratis ditambah saran AI, prediksi omzet, draf broadcast, dan riwayat insight lengkap.
+- **FR-16 & FR-17 Penerbitan & validasi kode lisensi oleh admin:** Belum ada modul `admin/`; perpindahan paket Basic/Premium dan toggle gateway pesan sementara dikelola langsung melalui `owner/license.php` untuk keperluan demo.
+- **FR-18 Pembukaan fitur berdasarkan paket:** Diimplementasikan di `ai/ai.php` (prediksi & draf broadcast terkunci pada paket Basic, terbuka pada Premium).
+- **FR-19 Peringatan penurunan omzet:** Diimplementasikan di `karyawan/index.php` dan `ai/ai.php` (membandingkan total omzet 7 hari terakhir dengan 7 hari sebelumnya) beserta deteksi order mendekati/melewati estimasi selesai.
+- **FR-20 s.d. FR-23 Saran/prediksi AI, draf broadcast, dan riwayat insight:** Diimplementasikan versi awal (`ai/ai.php`) dengan proyeksi 30 hari dari rata-rata harian, generator template draf broadcast, simulasi kirim, dan penyimpanan riwayat ke tabel `ai_insight`.
