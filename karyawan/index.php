@@ -20,7 +20,7 @@ for ($i = 6; $i >= 0; $i--) {
 $maxChart = max(array_merge($chartValues, [10000]));
 
 $omzet7HariLalu = array_sum($chartValues);
-$omzet7HariPrev = (int)$conn->query("SELECT COALESCE(SUM(amount),0) t FROM orders WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 14 DAY) AND created_at < DATE_SUB(CURDATE(), INTERVAL 7 DAY)")->fetch_assoc()['t'];
+$omzet7HariPrev = (int)$conn->query("SELECT COALESCE(SUM(amount),0) t FROM orders WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 13 DAY) AND created_at < DATE_SUB(CURDATE(), INTERVAL 6 DAY)")->fetch_assoc()['t'];
 $omzetTurun = ($omzet7HariPrev > 0 && $omzet7HariLalu < $omzet7HariPrev);
 $persenTurun = $omzetTurun ? round((($omzet7HariPrev - $omzet7HariLalu) / $omzet7HariPrev) * 100, 1) : 0;
 
@@ -104,7 +104,7 @@ $lateCount = (int)$conn->query("SELECT COUNT(*) c FROM orders WHERE status != 'S
 
       <?php if ($omzetTurun): ?>
         <div class="alert alert-danger" style="margin-bottom:12px;">
-          <b>Peringatan AI:</b> Omzet 7 hari terakhir turun <b><?= $persenTurun ?>%</b> dibanding rata-rata minggu sebelumnya[cite: 2].
+          <b>Peringatan AI:</b> Omzet 7 hari terakhir turun <b><?= $persenTurun ?>%</b> dibanding total 7 hari sebelumnya.
         </div>
       <?php else: ?>
         <div class="alert alert-success" style="margin-bottom:12px;">
@@ -122,9 +122,11 @@ $lateCount = (int)$conn->query("SELECT COUNT(*) c FROM orders WHERE status != 'S
         </div>
       <?php endif; ?>
 
-      <a href="../ai/ai.php" class="btn-secondary btn-block">
-        <?= icon('sparkle', 15) ?> Buka Analisis Lengkap & Draf Broadcast[cite: 2]
-      </a>
+      <?php if ($role === 'owner'): ?>
+        <a href="../ai/ai.php" class="btn-secondary btn-block">
+          <?= icon('sparkle', 15) ?> Buka Analisis Lengkap & Draf Broadcast
+        </a>
+      <?php endif; ?>
     </section>
   </div>
 </div>

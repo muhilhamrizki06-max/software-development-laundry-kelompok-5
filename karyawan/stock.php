@@ -3,30 +3,52 @@ require_once '../config/koneksi.php';
 include '../public/includes/header.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf_page();
     $act = $_POST['act'] ?? '';
     if ($act === 'new') {
         $stmt = $conn->prepare("INSERT INTO inventory_items (name, category, unit, quantity, minimum) VALUES (?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssdd", $_POST['name'], $_POST['category'], $_POST['unit'], $_POST['quantity'], $_POST['minimum']);
+        $name = trim($_POST['name'] ?? '');
+        $cat  = trim($_POST['category'] ?? 'Bahan cuci');
+        $unit = $_POST['unit'] ?? 'pcs';
+        $qty  = max(0, (float)($_POST['quantity'] ?? 0));
+        $min  = max(0, (float)($_POST['minimum'] ?? 0));
+        $stmt->bind_param("sssdd", $name, $cat, $unit, $qty, $min);
         $stmt->execute();
         header("Location: stock.php?msg=added");
         exit;
     } elseif ($act === 'move') {
-        $id   = (int)$_POST['item_id'];
-        $type = $_POST['type'];
-        $qty  = (float)$_POST['quantity'];
-        $item = $conn->query("SELECT * FROM inventory_items WHERE id=$id")->fetch_assoc();
-        if ($item) {
+        $id   = (int)($_POST['item_id'] ?? 0);
+        $type = ($_POST['type'] ?? '') === 'in' ? 'in' : 'out';
+        $qty  = max(0, (float)($_POST['quantity'] ?? 0));
+        $note = trim($_POST['note'] ?? '');
+
+        $stmtFind = $conn->prepare("SELECT * FROM inventory_items WHERE id = ?");
+        $stmtFind->bind_param("i", $id);
+        $stmtFind->execute();
+        $item = $stmtFind->get_result()->fetch_assoc();
+
+        if ($item && $qty > 0) {
             $before = (float)$item['quantity'];
             $after  = $type === 'in' ? $before + $qty : max(0, $before - $qty);
-            $conn->query("UPDATE inventory_items SET quantity=$after WHERE id=$id");
-            $stmt = $conn->prepare("INSERT INTO stock_movements (item_id, type, quantity, before_qty, after_qty, note, actor, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("isdddsss", $id, $type, $qty, $before, $after, $_POST['note'], $user['name'], $role);
-            $stmt->execute();
+            $conn->begin_transaction();
+            try {
+                $stmtUpd = $conn->prepare("UPDATE inventory_items SET quantity = ? WHERE id = ?");
+                $stmtUpd->bind_param("di", $after, $id);
+                $stmtUpd->execute();
+
+                $stmt = $conn->prepare("INSERT INTO stock_movements (item_id, type, quantity, before_qty, after_qty, note, actor, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param("isdddsss", $id, $type, $qty, $before, $after, $note, $user['name'], $role);
+                $stmt->execute();
+                $conn->commit();
+            } catch (Throwable $e) {
+                $conn->rollback();
+                throw $e;
+            }
         }
         header("Location: stock.php?msg=moved");
         exit;
     } elseif ($act === 'delete') {
-        $id = (int)$_POST['item_id'];
+        $id = (int)($_POST['item_id'] ?? 0);
         $stmt = $conn->prepare("DELETE FROM inventory_items WHERE id = ?");
         $stmt->bind_param("i", $id);
         $stmt->execute();
@@ -77,7 +99,8 @@ $logs  = $conn->query("SELECT sm.*, ii.name AS item_name, ii.unit FROM stock_mov
                   <td><?= (float)$i['minimum'] ?> <?= $i['unit'] ?></td>
                   <td><?= badge_status($st) ?></td>
                   <td>
-                    <form method="POST" onsubmit="return confirm('Hapus permanen barang <?= htmlspecialchars(addslashes($i['name'])) ?>? Riwayat mutasi barang ini juga akan terhapus.')">
+                    <form method="POST" data-confirm="Hapus permanen barang <?= htmlspecialchars($i['name']) ?>? Riwayat mutasi barang ini juga akan terhapus.">
+                      <?= csrf_field() ?>
                       <input type="hidden" name="act" value="delete">
                       <input type="hidden" name="item_id" value="<?= $i['id'] ?>">
                       <button type="submit" class="icon-btn" style="width:32px; height:32px;" title="Hapus barang">
@@ -119,6 +142,7 @@ $logs  = $conn->query("SELECT sm.*, ii.name AS item_name, ii.unit FROM stock_mov
 
     <aside style="display:flex; flex-direction:column; gap:20px;">
       <form method="POST" class="panel panel-pad">
+        <?= csrf_field() ?>
         <input type="hidden" name="act" value="move">
         <h3 class="section-title">Catat mutasi stok</h3>
         <div class="form-group" style="margin-top:14px;">
@@ -145,6 +169,7 @@ $logs  = $conn->query("SELECT sm.*, ii.name AS item_name, ii.unit FROM stock_mov
       </form>
 
       <form method="POST" class="panel panel-pad">
+        <?= csrf_field() ?>
         <input type="hidden" name="act" value="new">
         <h3 class="section-title">Tambah barang baru</h3>
         <div class="form-group" style="margin-top:14px;"><label class="form-label">Nama barang</label><input type="text" name="name" class="form-input" required></div>
