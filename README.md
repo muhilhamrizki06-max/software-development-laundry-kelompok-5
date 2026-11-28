@@ -27,8 +27,3 @@ Aplikasi manajemen operasional laundry berbasis web menggunakan PHP Native dan M
 3. Import `database/schema.sql` melalui phpMyAdmin atau MySQL CLI (akan membuat database `laundria2` beserta data demo).
 4. Sesuaikan host, user, password, dan nama database di `config/koneksi.php` bila diperlukan.
 5. Akses aplikasi melalui browser (misal `http://localhost/software-development-laundry-kelompok-5/`).
-
-## Akun Demo Awal
-
-- **Owner:** `owner@laundria.id` / `laundria2025`
-- **Karyawan:** `siti@laundria.id` / `laundria2025`
