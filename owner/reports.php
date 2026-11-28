@@ -2,9 +2,7 @@
 require_once '../config/koneksi.php';
 include '../public/includes/header.php';
 
-if ($role !== 'owner') {
-    exit('<div class="page"><div class="alert alert-danger">Halaman ini khusus untuk Owner.</div></div>');
-}
+require_owner_view($role);
 
 $q      = trim($_GET['q'] ?? '');
 $status = $_GET['status'] ?? 'all';
@@ -48,10 +46,14 @@ $totalRev = array_sum(array_column($orders, 'amount'));
 $cntOrders = count($orders);
 $avgOrder = $cntOrders > 0 ? $totalRev / $cntOrders : 0;
 
-$expSql = $period === 'all'
-    ? "SELECT COALESCE(SUM(amount),0) t FROM expenses"
-    : "SELECT COALESCE(SUM(amount),0) t FROM expenses WHERE DATE_FORMAT(date, '%Y-%m') = '" . $conn->real_escape_string($period) . "'";
-$totalCosts = $conn->query($expSql)->fetch_assoc()['t'];
+if ($period === 'all') {
+    $totalCosts = (int)$conn->query("SELECT COALESCE(SUM(amount),0) t FROM expenses")->fetch_assoc()['t'];
+} else {
+    $stmtExp = $conn->prepare("SELECT COALESCE(SUM(amount),0) t FROM expenses WHERE DATE_FORMAT(date, '%Y-%m') = ?");
+    $stmtExp->bind_param("s", $period);
+    $stmtExp->execute();
+    $totalCosts = (int)$stmtExp->get_result()->fetch_assoc()['t'];
+}
 
 $months = $conn->query("SELECT DISTINCT DATE_FORMAT(created_at, '%Y-%m') m FROM orders ORDER BY m DESC");
 ?>
@@ -115,13 +117,13 @@ $months = $conn->query("SELECT DISTINCT DATE_FORMAT(created_at, '%Y-%m') m FROM 
             <tr><td colspan="7" style="text-align:center; padding:32px; color:#81958b;">Tidak ada transaksi yang sesuai filter.</td></tr>
           <?php else: foreach ($orders as $o): ?>
             <tr>
-              <td><a href="../karyawan/nota.php?id=<?= $o['id'] ?>" style="font-weight:800; color:#28795e;"><?= $o['id'] ?></a></td>
+              <td><a href="../karyawan/nota.php?id=<?= urlencode($o['id']) ?>" style="font-weight:800; color:#28795e;"><?= htmlspecialchars($o['id']) ?></a></td>
               <td style="font-weight:700;"><?= htmlspecialchars($o['customer_name']) ?></td>
               <td><?= htmlspecialchars($o['layanan_list']) ?></td>
               <td style="font-weight:700;"><?= money($o['amount']) ?></td>
               <td><?= badge_status($o['status']) ?></td>
               <td><?= date('d M Y', strtotime($o['due_date'])) ?></td>
-              <td><a href="../karyawan/nota.php?id=<?= $o['id'] ?>" class="icon-btn"><?= icon('chevron', 14) ?></a></td>
+              <td><a href="../karyawan/nota.php?id=<?= urlencode($o['id']) ?>" class="icon-btn"><?= icon('chevron', 14) ?></a></td>
             </tr>
           <?php endforeach; endif; ?>
         </tbody>

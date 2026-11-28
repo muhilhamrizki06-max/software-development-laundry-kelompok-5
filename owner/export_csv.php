@@ -1,6 +1,6 @@
 <?php
 require_once '../config/koneksi.php';
-cek_login();
+cek_owner_api();
 
 $q      = trim($_GET['q'] ?? '');
 $status = $_GET['status'] ?? 'all';
@@ -13,7 +13,8 @@ $types = "";
 if ($q !== '') {
     $where[] = "(o.id LIKE ? OR c.name LIKE ?)";
     $like = "%$q%";
-    $params[] = $like; $params[] = $like;
+    $params[] = $like;
+    $params[] = $like;
     $types .= "ss";
 }
 if ($status !== 'all') {
@@ -32,18 +33,34 @@ $sql = "SELECT o.id, c.name, o.amount, o.paid_amount, o.status, o.payment, o.cre
         WHERE " . implode(" AND ", $where) . " ORDER BY o.created_at DESC";
 
 $stmt = $conn->prepare($sql);
-if ($types !== "") $stmt->bind_param($types, ...$params);
+if ($types !== "") {
+    $stmt->bind_param($types, ...$params);
+}
 $stmt->execute();
 $res = $stmt->get_result();
 
+$safePeriod = preg_replace('/[^a-zA-Z0-9_-]/', '', $period);
+if ($safePeriod === '') {
+    $safePeriod = 'all';
+}
+
 header('Content-Type: text/csv; charset=utf-8');
-header('Content-Disposition: attachment; filename=laporan-laundria-' . $period . '.csv');
+header('Content-Disposition: attachment; filename="laporan-laundria-' . $safePeriod . '.csv"');
 
 $out = fopen('php://output', 'w');
-fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF));
+fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF));
 fputcsv($out, ['ID Order', 'Pelanggan', 'Total (Rp)', 'Dibayar (Rp)', 'Status', 'Pembayaran', 'Tanggal Masuk', 'Estimasi Selesai']);
 
 while ($row = $res->fetch_assoc()) {
-    fputcsv($out, [$row['id'], $row['name'], $row['amount'], $row['paid_amount'], $row['status'], $row['payment'], $row['created_at'], $row['due_date']]);
+    fputcsv($out, [
+        csv_safe($row['id']),
+        csv_safe($row['name']),
+        $row['amount'],
+        $row['paid_amount'],
+        csv_safe($row['status']),
+        csv_safe($row['payment']),
+        $row['created_at'],
+        $row['due_date']
+    ]);
 }
 fclose($out);

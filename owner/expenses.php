@@ -2,15 +2,14 @@
 require_once '../config/koneksi.php';
 include '../public/includes/header.php';
 
-if ($role !== 'owner') {
-    exit('<div class="page"><div class="alert alert-danger">Halaman ini khusus untuk Owner.</div></div>');
-}
+require_owner_view($role);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $label = trim($_POST['label']);
-    $amount = (int)$_POST['amount'];
-    $category = $_POST['category'];
-    $date = $_POST['date'];
+    require_csrf_page();
+    $label = trim($_POST['label'] ?? '');
+    $amount = (int)($_POST['amount'] ?? 0);
+    $category = $_POST['category'] ?? 'Lainnya';
+    $date = $_POST['date'] ?? date('Y-m-d');
 
     if ($label !== '' && $amount > 0) {
         $stmt = $conn->prepare("INSERT INTO expenses (label, amount, category, date) VALUES (?, ?, ?, ?)");
@@ -39,6 +38,7 @@ $totalExp = $conn->query("SELECT COALESCE(SUM(amount),0) t FROM expenses")->fetc
 
   <div class="grid-2-left">
     <form method="POST" class="panel panel-pad">
+      <?= csrf_field() ?>
       <h3 class="section-title">Tambah pengeluaran</h3>
       <div class="form-group" style="margin-top:16px;">
         <label class="form-label">Keterangan</label>

@@ -2,29 +2,33 @@
 require_once '../config/koneksi.php';
 include '../public/includes/header.php';
 
-if ($role !== 'owner') {
-    exit('<div class="page"><div class="alert alert-danger">Halaman ini khusus untuk Owner.</div></div>');
-}
+require_owner_view($role);
 
 $err = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf_page();
     $act = $_POST['act'] ?? '';
     if ($act === 'add') {
-        $name = trim($_POST['name']);
-        $email = trim($_POST['email']);
-        $pass = password_hash($_POST['password'], PASSWORD_DEFAULT);
-
-        $cek = $conn->prepare("SELECT id FROM users WHERE email = ?");
-        $cek->bind_param("s", $email);
-        $cek->execute();
-        if ($cek->get_result()->num_rows > 0) {
-            $err = "Email sudah terdaftar di sistem.";
+        $name = trim($_POST['name'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $rawPass = $_POST['password'] ?? '';
+        if ($name === '' || $email === '' || $rawPass === '') {
+            $err = "Nama, email, dan kata sandi wajib diisi.";
         } else {
-            $stmt = $conn->prepare("INSERT INTO users (name, email, password, role, position, active) VALUES (?, ?, ?, 'employee', 'Karyawan', 1)");
-            $stmt->bind_param("sss", $name, $email, $pass);
-            $stmt->execute();
-            header("Location: employees.php?msg=added");
-            exit;
+            $pass = password_hash($rawPass, PASSWORD_DEFAULT);
+
+            $cek = $conn->prepare("SELECT id FROM users WHERE email = ?");
+            $cek->bind_param("s", $email);
+            $cek->execute();
+            if ($cek->get_result()->num_rows > 0) {
+                $err = "Email sudah terdaftar di sistem.";
+            } else {
+                $stmt = $conn->prepare("INSERT INTO users (name, email, password, role, position, active) VALUES (?, ?, ?, 'employee', 'Karyawan', 1)");
+                $stmt->bind_param("sss", $name, $email, $pass);
+                $stmt->execute();
+                header("Location: employees.php?msg=added");
+                exit;
+            }
         }
     } elseif ($act === 'toggle') {
         $uid = (int)$_POST['user_id'];
@@ -60,10 +64,11 @@ $activeCnt = count(array_filter($emps, fn($e) => $e['active'] == 1));
   <?php elseif (isset($_GET['msg']) && $_GET['msg'] === 'deleted'): ?>
     <div class="alert alert-warning">Akun karyawan berhasil dihapus secara permanen.</div>
   <?php endif; ?>
-  <?php if ($err): ?><div class="alert alert-danger"><?= $err ?></div><?php endif; ?>
+  <?php if ($err): ?><div class="alert alert-danger"><?= htmlspecialchars($err) ?></div><?php endif; ?>
 
   <div class="grid-2-left">
     <form method="POST" class="panel panel-pad">
+      <?= csrf_field() ?>
       <input type="hidden" name="act" value="add">
       <h3 class="section-title">Tambah karyawan</h3>
       <div class="form-group" style="margin-top:16px;">
@@ -109,13 +114,15 @@ $activeCnt = count(array_filter($emps, fn($e) => $e['active'] == 1));
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
               <form method="POST">
+                <?= csrf_field() ?>
                 <input type="hidden" name="act" value="toggle">
                 <input type="hidden" name="user_id" value="<?= $e['id'] ?>">
                 <button type="submit" class="badge <?= $e['active'] ? 'badge-green' : 'badge-gray' ?>" style="border:none; cursor:pointer;">
                   <?= $e['active'] ? 'Aktif · nonaktifkan' : 'Nonaktif · aktifkan' ?>
                 </button>
               </form>
-              <form method="POST" onsubmit="return confirm('Hapus permanen akun <?= htmlspecialchars(addslashes($e['name'])) ?>? Tindakan ini tidak bisa dibatalkan.')">
+              <form method="POST" data-confirm="Hapus permanen akun <?= htmlspecialchars($e['name']) ?>? Tindakan ini tidak bisa dibatalkan.">
+                <?= csrf_field() ?>
                 <input type="hidden" name="act" value="delete">
                 <input type="hidden" name="user_id" value="<?= $e['id'] ?>">
                 <button type="submit" class="badge badge-red" style="border:none; cursor:pointer;" title="Hapus permanen">

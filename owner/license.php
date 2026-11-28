@@ -2,11 +2,10 @@
 require_once '../config/koneksi.php';
 include '../public/includes/header.php';
 
-if ($role !== 'owner') {
-    exit('<div class="page"><div class="alert alert-danger">Halaman ini khusus untuk Owner.</div></div>');
-}
+require_owner_view($role);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf_page();
     if (isset($_POST['set_plan'])) {
         $p = $_POST['set_plan'] === 'premium' ? 'premium' : 'basic';
         $stmt = $conn->prepare("UPDATE settings SET plan = ? WHERE id = 1");
@@ -57,6 +56,7 @@ $cfg = $conn->query("SELECT * FROM settings WHERE id = 1")->fetch_assoc();
           <?php endif; ?>
         </ul>
         <form method="POST">
+          <?= csrf_field() ?>
           <button type="submit" name="set_plan" value="<?= $key ?>" class="<?= $key === 'premium' ? 'btn-primary' : 'btn-secondary' ?> btn-block" <?= $active ? 'disabled' : '' ?>>
             <?= $active ? 'Sedang digunakan' : "Gunakan paket $label" ?>
           </button>
@@ -71,6 +71,7 @@ $cfg = $conn->query("SELECT * FROM settings WHERE id = 1")->fetch_assoc();
       <p class="section-sub">Aktifkan untuk mengizinkan fitur kirim broadcast pada halaman Analisis & AI.</p>
     </div>
     <form method="POST">
+      <?= csrf_field() ?>
       <button type="submit" name="toggle_msg" class="<?= !empty($cfg['messaging']) ? 'btn-primary' : 'btn-secondary' ?>">
         <?= !empty($cfg['messaging']) ? '● Layanan Pesan Aktif (Klik untuk Nonaktifkan)' : 'Aktifkan Layanan Pesan' ?>
       </button>

@@ -2,19 +2,19 @@
 require_once '../config/koneksi.php';
 include '../public/includes/header.php';
 
-if ($role !== 'owner') {
-    exit('<div class="page"><div class="alert alert-danger">Halaman ini khusus untuk Owner.</div></div>');
-}
+require_owner_view($role);
 
 $msg = '';
+$err = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf_page();
     $act = $_POST['act'] ?? '';
 
     if ($act === 'profil') {
-        $nama   = trim($_POST['shop_name']);
-        $alamat = trim($_POST['shop_address']);
-        $telp   = trim($_POST['shop_phone']);
-        $footer = trim($_POST['receipt_footer']);
+        $nama   = trim($_POST['shop_name'] ?? '');
+        $alamat = trim($_POST['shop_address'] ?? '');
+        $telp   = trim($_POST['shop_phone'] ?? '');
+        $footer = trim($_POST['receipt_footer'] ?? '');
 
         $stmt = $conn->prepare("UPDATE settings SET shop_name = ?, shop_address = ?, shop_phone = ?, receipt_footer = ? WHERE id = 1");
         $stmt->bind_param("ssss", $nama, $alamat, $telp, $footer);
@@ -23,37 +23,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     elseif ($act === 'add_service') {
-        $sName  = trim($_POST['name']);
-        $sUnit  = $_POST['unit'];
-        $sPrice = max(0, (int)$_POST['price']);
+        $sName  = trim($_POST['name'] ?? '');
+        $sUnit  = $_POST['unit'] ?? 'kg';
+        $sPrice = max(0, (int)($_POST['price'] ?? 0));
+        if (!in_array($sUnit, ['kg', 'pcs', 'm2'], true)) {
+            $sUnit = 'kg';
+        }
 
         if ($sName !== '' && $sPrice > 0) {
             $stmt = $conn->prepare("INSERT INTO services (name, unit, price) VALUES (?, ?, ?)");
             $stmt->bind_param("ssi", $sName, $sUnit, $sPrice);
             $stmt->execute();
             $msg = "Layanan baru berhasil ditambahkan.";
+        } else {
+            $err = "Nama layanan dan harga lebih dari 0 wajib diisi.";
         }
     }
 
     elseif ($act === 'edit_service') {
-        $sid    = (int)$_POST['id'];
-        $sName  = trim($_POST['name']);
-        $sUnit  = $_POST['unit'];
-        $sPrice = max(0, (int)$_POST['price']);
+        $sid    = (int)($_POST['id'] ?? 0);
+        $sName  = trim($_POST['name'] ?? '');
+        $sUnit  = $_POST['unit'] ?? 'kg';
+        $sPrice = max(0, (int)($_POST['price'] ?? 0));
+        if (!in_array($sUnit, ['kg', 'pcs', 'm2'], true)) {
+            $sUnit = 'kg';
+        }
 
-        $stmt = $conn->prepare("UPDATE services SET name = ?, unit = ?, price = ? WHERE id = ?");
-        $stmt->bind_param("ssii", $sName, $sUnit, $sPrice, $sid);
-        $stmt->execute();
-        $msg = "Tarif layanan berhasil diperbarui.";
+        if ($sid > 0 && $sName !== '' && $sPrice > 0) {
+            $stmt = $conn->prepare("UPDATE services SET name = ?, unit = ?, price = ? WHERE id = ?");
+            $stmt->bind_param("ssii", $sName, $sUnit, $sPrice, $sid);
+            $stmt->execute();
+            $msg = "Tarif layanan berhasil diperbarui.";
+        } else {
+            $err = "Data layanan tidak valid.";
+        }
     }
 
     elseif ($act === 'delete_service') {
-        $sid = (int)$_POST['id'];
-        $cek = $conn->query("SELECT COUNT(*) c FROM order_items WHERE service_id = $sid")->fetch_assoc()['c'];
+        $sid = (int)($_POST['id'] ?? 0);
+        $stmtCek = $conn->prepare("SELECT COUNT(*) c FROM order_items WHERE service_id = ?");
+        $stmtCek->bind_param("i", $sid);
+        $stmtCek->execute();
+        $cek = (int)$stmtCek->get_result()->fetch_assoc()['c'];
         if ($cek > 0) {
-            $msg = "Layanan tidak dapat dihapus karena sudah memiliki riwayat transaksi.";
+            $err = "Layanan tidak dapat dihapus karena sudah memiliki riwayat transaksi.";
         } else {
-            $conn->query("DELETE FROM services WHERE id = $sid");
+            $stmtDel = $conn->prepare("DELETE FROM services WHERE id = ?");
+            $stmtDel->bind_param("i", $sid);
+            $stmtDel->execute();
             $msg = "Layanan berhasil dihapus.";
         }
     }
@@ -74,10 +91,14 @@ $services = $conn->query("SELECT * FROM services ORDER BY id ASC")->fetch_all(MY
   <?php if ($msg): ?>
     <div class="alert alert-success"><?= htmlspecialchars($msg) ?></div>
   <?php endif; ?>
+  <?php if ($err): ?>
+    <div class="alert alert-danger"><?= htmlspecialchars($err) ?></div>
+  <?php endif; ?>
 
   <div class="grid-2-left">
 
   <form method="POST" class="panel panel-pad">
+      <?= csrf_field() ?>
       <input type="hidden" name="act" value="profil">
       <h3 class="section-title">Profil outlet & struk</h3>
       <p class="section-sub">Informasi yang dicetak di bagian atas dan bawah nota.</p>
@@ -113,35 +134,37 @@ $services = $conn->query("SELECT * FROM services ORDER BY id ASC")->fetch_all(MY
               <tr><th>Nama Layanan</th><th>Satuan</th><th>Harga (Rp)</th><th>Aksi</th></tr>
             </thead>
             <tbody>
-              <?php foreach ($services as $s): ?>
+              <?php foreach ($services as $s): $fid = 'edit-svc-' . (int)$s['id']; ?>
                 <tr>
-                  <form method="POST">
-                    <input type="hidden" name="act" value="edit_service">
-                    <input type="hidden" name="id" value="<?= $s['id'] ?>">
-                    <td>
-                      <input type="text" name="name" value="<?= htmlspecialchars($s['name']) ?>" class="form-input" style="height:34px;" required>
-                    </td>
-                    <td style="width:105px;">
-                      <select name="unit" class="form-input" style="height:34px;">
-                        <?php foreach (['kg', 'pcs', 'm2'] as $u): ?>
-                          <option value="<?= $u ?>" <?= $s['unit'] === $u ? 'selected' : '' ?>>per <?= $u ?></option>
-                        <?php endforeach; ?>
-                      </select>
-                    </td>
-                    <td style="width:130px;">
-                      <input type="number" name="price" value="<?= $s['price'] ?>" min="0" step="500" class="form-input" style="height:34px;" required>
-                    </td>
-                    <td style="white-space:nowrap;">
+                  <td>
+                    <input type="text" name="name" form="<?= $fid ?>" value="<?= htmlspecialchars($s['name']) ?>" class="form-input" style="height:34px;" required>
+                  </td>
+                  <td style="width:105px;">
+                    <select name="unit" form="<?= $fid ?>" class="form-input" style="height:34px;">
+                      <?php foreach (['kg', 'pcs', 'm2'] as $u): ?>
+                        <option value="<?= $u ?>" <?= $s['unit'] === $u ? 'selected' : '' ?>>per <?= $u ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </td>
+                  <td style="width:130px;">
+                    <input type="number" name="price" form="<?= $fid ?>" value="<?= (int)$s['price'] ?>" min="0" step="500" class="form-input" style="height:34px;" required>
+                  </td>
+                  <td style="white-space:nowrap;">
+                    <form id="<?= $fid ?>" method="POST" style="display:inline;">
+                      <?= csrf_field() ?>
+                      <input type="hidden" name="act" value="edit_service">
+                      <input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
                       <button type="submit" class="btn-secondary" style="height:34px; padding:0 12px;">Simpan</button>
-                  </form>
-                      <form method="POST" style="display:inline;" onsubmit="return confirm('Hapus layanan <?= htmlspecialchars(addslashes($s['name'])) ?>?')">
-                        <input type="hidden" name="act" value="delete_service">
-                        <input type="hidden" name="id" value="<?= $s['id'] ?>">
-                        <button type="submit" class="icon-btn" style="height:34px; width:34px;" title="Hapus layanan">
-                          <?= icon('close', 14) ?>
-                        </button>
-                      </form>
-                    </td>
+                    </form>
+                    <form method="POST" style="display:inline;" data-confirm="Hapus layanan <?= htmlspecialchars($s['name']) ?>?">
+                      <?= csrf_field() ?>
+                      <input type="hidden" name="act" value="delete_service">
+                      <input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
+                      <button type="submit" class="icon-btn" style="height:34px; width:34px;" title="Hapus layanan">
+                        <?= icon('close', 14) ?>
+                      </button>
+                    </form>
+                  </td>
                 </tr>
               <?php endforeach; ?>
             </tbody>
@@ -150,6 +173,7 @@ $services = $conn->query("SELECT * FROM services ORDER BY id ASC")->fetch_all(MY
       </section>
 
       <form method="POST" class="panel panel-pad">
+        <?= csrf_field() ?>
         <input type="hidden" name="act" value="add_service">
         <h3 class="section-title">Tambah layanan baru</h3>
         <div class="grid-form-2" style="margin-top:14px;">
