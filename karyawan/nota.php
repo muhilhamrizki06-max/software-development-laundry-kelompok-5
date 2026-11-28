@@ -78,7 +78,7 @@ if ($id === '') {
                 <tr><td colspan="7" style="text-align:center; padding:32px; color:#81958b;">Belum ada nota yang sesuai pencarian.</td></tr>
               <?php else: while ($row = $list->fetch_assoc()): ?>
                 <tr>
-                  <td><a href="nota.php?id=<?= $row['id'] ?>" style="font-weight:800; color:#28795e;"><?= $row['id'] ?></a></td>
+                  <td><a href="nota.php?id=<?= urlencode($row['id']) ?>" style="font-weight:800; color:#28795e;"><?= htmlspecialchars($row['id']) ?></a></td>
                   <td>
                     <div style="font-weight:700;"><?= htmlspecialchars($row['cname']) ?></div>
                     <div style="font-size:10px; color:#8a9d90;"><?= htmlspecialchars($row['phone']) ?></div>
@@ -88,7 +88,7 @@ if ($id === '') {
                   <td><?= badge_status($row['status']) ?></td>
                   <td><?= date('d M Y', strtotime($row['due_date'])) ?></td>
                   <td>
-                    <a href="nota.php?id=<?= $row['id'] ?>" class="btn-secondary" style="height:32px; padding:0 12px;">
+                    <a href="nota.php?id=<?= urlencode($row['id']) ?>" class="btn-secondary" style="height:32px; padding:0 12px;">
                       <?= icon('reports', 14) ?> Buka Nota
                     </a>
                   </td>
@@ -104,30 +104,93 @@ if ($id === '') {
     exit;
 }
 
-$updated = false;
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['status'])) {
-        $stBaru = $_POST['status'];
-        $stmt = $conn->prepare("UPDATE orders SET status = ? WHERE id = ?");
-        $stmt->bind_param("ss", $stBaru, $id);
-        $stmt->execute();
+$shiftOpen = $conn->query("SELECT id FROM cash_shifts WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1")->fetch_assoc();
+$allowedStatus = ['Menunggu', 'Diproses', 'Siap Diambil', 'Selesai'];
 
-        if (isset($_POST['ajax'])) {
-            ob_clean();
+$updated = false;
+$err = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $isAjax = isset($_POST['ajax']);
+    if (!verify_csrf()) {
+        if ($isAjax) {
+            if (ob_get_level() > 0) ob_clean();
+            http_response_code(403);
             header('Content-Type: application/json');
-            echo json_encode([
-                'ok' => true,
-                'status' => $stBaru,
-                'badge_html' => badge_status($stBaru)
-            ]);
+            echo json_encode(['ok' => false, 'msg' => 'Sesi formulir kedaluwarsa. Muat ulang halaman.']);
             exit;
         }
-        $updated = true;
+        require_csrf_page();
+    }
+
+    if (isset($_POST['status'])) {
+        $stBaru = $_POST['status'] ?? '';
+        if (!in_array($stBaru, $allowedStatus, true)) {
+            if ($isAjax) {
+                if (ob_get_level() > 0) ob_clean();
+                http_response_code(400);
+                header('Content-Type: application/json');
+                echo json_encode(['ok' => false, 'msg' => 'Status cucian tidak valid.']);
+                exit;
+            }
+            $err = 'Status cucian tidak valid.';
+        } else {
+            $stmt = $conn->prepare("UPDATE orders SET status = ? WHERE id = ?");
+            $stmt->bind_param("ss", $stBaru, $id);
+            $stmt->execute();
+
+            if ($isAjax) {
+                if (ob_get_level() > 0) ob_clean();
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'ok' => true,
+                    'status' => $stBaru,
+                    'badge_html' => badge_status($stBaru)
+                ]);
+                exit;
+            }
+            $updated = true;
+        }
     } elseif (isset($_POST['lunasi'])) {
-        $stmt = $conn->prepare("UPDATE orders SET paid_amount = amount WHERE id = ?");
-        $stmt->bind_param("s", $id);
-        $stmt->execute();
-        $updated = true;
+        $payMethod = $_POST['pay_method'] ?? 'Tunai';
+        $allowedMethods = ['Tunai', 'QRIS', 'Transfer'];
+
+        if (!in_array($payMethod, $allowedMethods, true)) {
+            $err = 'Metode pelunasan tidak valid.';
+        } elseif ($payMethod === 'Tunai' && !$shiftOpen) {
+            $err = 'Buka shift kas terlebih dahulu untuk menerima pelunasan Tunai.';
+        } else {
+            $conn->begin_transaction();
+            try {
+                $stmtChk = $conn->prepare("SELECT amount, paid_amount, payment FROM orders WHERE id = ? FOR UPDATE");
+                $stmtChk->bind_param("s", $id);
+                $stmtChk->execute();
+                $ordRow = $stmtChk->get_result()->fetch_assoc();
+
+                if ($ordRow) {
+                    $sisa = max(0, (int)$ordRow['amount'] - (int)$ordRow['paid_amount']);
+                    if ($sisa > 0) {
+                        if ($ordRow['payment'] === 'Bayar saat ambil') {
+                            $stmtUpd = $conn->prepare("UPDATE orders SET paid_amount = amount, payment = ? WHERE id = ?");
+                            $stmtUpd->bind_param("ss", $payMethod, $id);
+                        } else {
+                            $stmtUpd = $conn->prepare("UPDATE orders SET paid_amount = amount WHERE id = ?");
+                            $stmtUpd->bind_param("s", $id);
+                        }
+                        $stmtUpd->execute();
+
+                        $shiftId = ($payMethod === 'Tunai' && $shiftOpen) ? (int)$shiftOpen['id'] : null;
+                        $stmtPay = $conn->prepare("INSERT INTO order_payments (order_id, amount, method, shift_id, actor) VALUES (?, ?, ?, ?, ?)");
+                        $stmtPay->bind_param("sisis", $id, $sisa, $payMethod, $shiftId, $user['name']);
+                        $stmtPay->execute();
+                    }
+                }
+                $conn->commit();
+                $updated = true;
+            } catch (Throwable $e) {
+                $conn->rollback();
+                $err = 'Gagal memproses pelunasan: ' . $e->getMessage();
+            }
+        }
     }
 }
 
@@ -191,6 +254,10 @@ $linkWaSiap = "https://wa.me/{$waNum}?text=" . rawurlencode($teksSiapWa);
       <span class="badge badge-green">Data diperbarui</span>
     <?php endif; ?>
   </div>
+
+  <?php if ($err): ?>
+    <div class="no-print alert alert-danger" style="max-width:480px; margin:0 auto 16px;"><?= htmlspecialchars($err) ?></div>
+  <?php endif; ?>
 
   <div class="panel receipt-paper" style="max-width:480px; margin:0 auto; overflow:hidden;">
     <div style="padding:28px;">
@@ -257,6 +324,7 @@ $linkWaSiap = "https://wa.me/{$waNum}?text=" . rawurlencode($teksSiapWa);
 
     <div class="no-print" style="padding:20px 28px; border-top:1px solid #e4ece6; background:#fafcfb;">
       <form id="form-ajax-status" method="POST" style="margin-bottom:12px;">
+        <?= csrf_field() ?>
         <label class="form-label">Update status pengerjaan</label>
         <div style="display:flex; gap:8px;">
           <select name="status" class="form-input">
@@ -270,6 +338,17 @@ $linkWaSiap = "https://wa.me/{$waNum}?text=" . rawurlencode($teksSiapWa);
 
       <?php if ($sisaTagihan > 0): ?>
         <form method="POST" style="margin-bottom:10px;">
+          <?= csrf_field() ?>
+          <label class="form-label">Metode pelunasan</label>
+          <div style="display:flex; gap:8px; margin-bottom:8px;">
+            <select name="pay_method" class="form-input">
+              <option value="Tunai" <?= !$shiftOpen ? 'disabled' : '' ?>>
+                Tunai <?= !$shiftOpen ? '(Buka shift kas dulu)' : '' ?>
+              </option>
+              <option value="QRIS" <?= !$shiftOpen ? 'selected' : '' ?>>QRIS</option>
+              <option value="Transfer">Transfer</option>
+            </select>
+          </div>
           <button type="submit" name="lunasi" class="btn-secondary btn-block" style="border-color:#1f7559; color:#1f7559; background:#edf6f1;">
             <?= icon('check', 15) ?> Terima Pelunasan (<?= money($sisaTagihan) ?>)
           </button>

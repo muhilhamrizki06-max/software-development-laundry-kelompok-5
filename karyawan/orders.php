@@ -14,64 +14,101 @@ $paketList = [
 
 $err = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $custId  = $_POST['customer_id'];
-    $dueDate = $_POST['due_date'];
-    $payment = $_POST['payment'];
+    require_csrf_page();
+    $custId  = $_POST['customer_id'] ?? '';
+    $dueDate = $_POST['due_date'] ?? date('Y-m-d');
+    $payment = $_POST['payment'] ?? 'Bayar saat ambil';
     $dpInput = max(0, (int)($_POST['paid_amount'] ?? 0));
     $paket   = $_POST['paket'] ?? 'Reguler';
-    $parfum  = $_POST['parfum'] ?? 'Lavender';
-    $rawNote = trim($_POST['notes']);
-    $svcIds  = $_POST['service_id'];
-    $qtys    = $_POST['quantity'];
+    $parfum  = trim($_POST['parfum'] ?? 'Lavender');
+    $rawNote = trim($_POST['notes'] ?? '');
+    $svcIds  = $_POST['service_id'] ?? [];
+    $qtys    = $_POST['quantity'] ?? [];
 
-    $persen = $paketList[$paket]['persen'] ?? 0;
-    $infoTag = "Paket: $paket" . ($persen > 0 ? " (+{$persen}%)" : "") . " · Parfum: $parfum";
-    $notes = $rawNote !== '' ? "$infoTag | $rawNote" : $infoTag;
+    $allowedPayments = ['Bayar saat ambil', 'Tunai', 'QRIS', 'Transfer'];
+    $hargaMap = [];
+    foreach ($services as $s) {
+        $hargaMap[$s['id']] = (int)$s['price'];
+    }
 
-    $conn->begin_transaction();
-    try {
-        if ($custId === 'new') {
-            $newName  = trim($_POST['new_name']);
-            $newPhone = trim($_POST['new_phone']);
-            $consent  = isset($_POST['consent']) ? 1 : 0;
-
-            $stmtC = $conn->prepare("INSERT INTO customers (name, phone, consent) VALUES (?, ?, ?)");
-            $stmtC->bind_param("ssi", $newName, $newPhone, $consent);
-            $stmtC->execute();
-            $custId = $conn->insert_id;
-        }
-
+    if (!isset($paketList[$paket])) {
+        $paket = 'Reguler';
+    }
+    if (!in_array($payment, $allowedPayments, true)) {
+        $err = "Metode pembayaran tidak valid.";
+    } elseif ($payment === 'Tunai' && !$shiftOpen) {
+        $err = "Buka shift kas terlebih dahulu untuk menerima pembayaran Tunai.";
+    } elseif (!is_array($svcIds) || !is_array($qtys) || count($svcIds) === 0) {
+        $err = "Pilih minimal satu layanan laundry.";
+    } else {
+        $validItems = [];
         $subtotal = 0;
-        $hargaMap = [];
-        foreach ($services as $s) {
-            $hargaMap[$s['id']] = $s['price'];
-        }
-        foreach ($svcIds as $idx => $sid) {
-            $subtotal += round($hargaMap[$sid] * (float)$qtys[$idx]);
-        }
-
-        $biayaPaket = round(($subtotal * $persen / 100) / 100) * 100;
-        $total = $subtotal + $biayaPaket;
-        $paidAmount = ($payment === 'Bayar saat ambil') ? 0 : ($dpInput > 0 ? min($dpInput, $total) : $total);
-
-        $orderId = 'ORD-' . strtoupper(substr(md5(uniqid()), 0, 8));
-        $stmtO = $conn->prepare("INSERT INTO orders (id, customer_id, amount, paid_amount, status, due_date, payment, notes) VALUES (?, ?, ?, ?, 'Menunggu', ?, ?, ?)");
-        $stmtO->bind_param("siiisss", $orderId, $custId, $total, $paidAmount, $dueDate, $payment, $notes);
-        $stmtO->execute();
-
-        $stmtI = $conn->prepare("INSERT INTO order_items (order_id, service_id, quantity) VALUES (?, ?, ?)");
-        foreach ($svcIds as $idx => $sid) {
-            $q = (float)$qtys[$idx];
-            $stmtI->bind_param("sid", $orderId, $sid, $q);
-            $stmtI->execute();
+        foreach ($svcIds as $idx => $sidRaw) {
+            $sid = (int)$sidRaw;
+            $q = (float)($qtys[$idx] ?? 0);
+            if (!isset($hargaMap[$sid]) || $q <= 0) {
+                $err = "Layanan atau jumlah cucian tidak valid.";
+                break;
+            }
+            $validItems[] = ['service_id' => $sid, 'quantity' => $q];
+            $subtotal += round($hargaMap[$sid] * $q);
         }
 
-        $conn->commit();
-        header("Location: nota.php?id=$orderId&baru=1");
-        exit;
-    } catch (Exception $e) {
-        $conn->rollback();
-        $err = "Gagal menyimpan order: " . $e->getMessage();
+        if ($err === '') {
+            $persen = $paketList[$paket]['persen'] ?? 0;
+            $infoTag = "Paket: $paket" . ($persen > 0 ? " (+{$persen}%)" : "") . " · Parfum: $parfum";
+            $notes = $rawNote !== '' ? "$infoTag | $rawNote" : $infoTag;
+
+            $conn->begin_transaction();
+            try {
+                if ($custId === 'new') {
+                    $newName  = trim($_POST['new_name'] ?? '');
+                    $newPhone = trim($_POST['new_phone'] ?? '');
+                    $consent  = isset($_POST['consent']) ? 1 : 0;
+                    if ($newName === '' || $newPhone === '') {
+                        throw new Exception("Nama dan nomor WhatsApp pelanggan baru wajib diisi.");
+                    }
+                    $stmtC = $conn->prepare("INSERT INTO customers (name, phone, consent) VALUES (?, ?, ?)");
+                    $stmtC->bind_param("ssi", $newName, $newPhone, $consent);
+                    $stmtC->execute();
+                    $custId = $conn->insert_id;
+                } else {
+                    $custId = (int)$custId;
+                    if ($custId <= 0) {
+                        throw new Exception("Pelanggan tidak valid.");
+                    }
+                }
+
+                $biayaPaket = round(($subtotal * $persen / 100) / 100) * 100;
+                $total = (int)($subtotal + $biayaPaket);
+                $paidAmount = ($payment === 'Bayar saat ambil') ? 0 : ($dpInput > 0 ? min($dpInput, $total) : $total);
+
+                $orderId = 'ORD-' . strtoupper(bin2hex(random_bytes(4)));
+                $stmtO = $conn->prepare("INSERT INTO orders (id, customer_id, amount, paid_amount, status, due_date, payment, notes) VALUES (?, ?, ?, ?, 'Menunggu', ?, ?, ?)");
+                $stmtO->bind_param("siiisss", $orderId, $custId, $total, $paidAmount, $dueDate, $payment, $notes);
+                $stmtO->execute();
+
+                $stmtI = $conn->prepare("INSERT INTO order_items (order_id, service_id, quantity) VALUES (?, ?, ?)");
+                foreach ($validItems as $item) {
+                    $stmtI->bind_param("sid", $orderId, $item['service_id'], $item['quantity']);
+                    $stmtI->execute();
+                }
+
+                if ($paidAmount > 0) {
+                    $shiftId = ($payment === 'Tunai' && $shiftOpen) ? (int)$shiftOpen['id'] : null;
+                    $stmtP = $conn->prepare("INSERT INTO order_payments (order_id, amount, method, shift_id, actor) VALUES (?, ?, ?, ?, ?)");
+                    $stmtP->bind_param("sisis", $orderId, $paidAmount, $payment, $shiftId, $user['name']);
+                    $stmtP->execute();
+                }
+
+                $conn->commit();
+                header("Location: nota.php?id=" . urlencode($orderId) . "&baru=1");
+                exit;
+            } catch (Exception $e) {
+                $conn->rollback();
+                $err = "Gagal menyimpan order: " . $e->getMessage();
+            }
+        }
     }
 }
 ?>
@@ -87,6 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <?php if ($err): ?><div class="alert alert-danger"><?= htmlspecialchars($err) ?></div><?php endif; ?>
 
   <form method="POST" class="grid-2-col">
+    <?= csrf_field() ?>
     <div style="display:flex; flex-direction:column; gap:20px;">
       <section class="panel panel-pad">
         <h3 class="section-title">01 · Pelanggan</h3>
@@ -251,7 +289,10 @@ function ubahPaket() {
   const hari = Number(sel.options[sel.selectedIndex].dataset.hari);
   const tgl = new Date();
   tgl.setDate(tgl.getDate() + hari);
-  document.getElementById('inp-due').value = tgl.toISOString().split('T')[0];
+  const y = tgl.getFullYear();
+  const m = String(tgl.getMonth() + 1).padStart(2, '0');
+  const d = String(tgl.getDate()).padStart(2, '0');
+  document.getElementById('inp-due').value = `${y}-${m}-${d}`;
   hitungTotal();
 }
 

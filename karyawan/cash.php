@@ -2,40 +2,69 @@
 require_once '../config/koneksi.php';
 include '../public/includes/header.php';
 
+function hitung_kas_shift(mysqli $conn, int $shiftId): array {
+    $stmtS = $conn->prepare("SELECT COALESCE(SUM(amount), 0) AS t FROM order_payments WHERE method = 'Tunai' AND shift_id = ?");
+    $stmtS->bind_param("i", $shiftId);
+    $stmtS->execute();
+    $salesTunai = (int)$stmtS->get_result()->fetch_assoc()['t'];
+
+    $stmtM = $conn->prepare("SELECT
+        COALESCE(SUM(CASE WHEN type = 'in' THEN amount ELSE 0 END), 0) AS kas_in,
+        COALESCE(SUM(CASE WHEN type = 'out' THEN amount ELSE 0 END), 0) AS kas_out
+        FROM cash_movements WHERE shift_id = ?");
+    $stmtM->bind_param("i", $shiftId);
+    $stmtM->execute();
+    $mov = $stmtM->get_result()->fetch_assoc();
+
+    return [
+        'salesTunai' => $salesTunai,
+        'kasIn'      => (int)($mov['kas_in'] ?? 0),
+        'kasOut'     => (int)($mov['kas_out'] ?? 0),
+    ];
+}
+
 $shift = $conn->query("SELECT * FROM cash_shifts WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1")->fetch_assoc();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf_page();
     $act = $_POST['act'] ?? '';
     if ($act === 'open' && !$shift) {
-        $modal = (int)$_POST['opening_balance'];
+        $modal = max(0, (int)($_POST['opening_balance'] ?? 0));
         $stmt = $conn->prepare("INSERT INTO cash_shifts (opened_by, opened_at, opening_balance) VALUES (?, NOW(), ?)");
         $stmt->bind_param("si", $user['name'], $modal);
         $stmt->execute();
     } elseif ($act === 'move' && $shift) {
+        $type = ($_POST['type'] ?? '') === 'in' ? 'in' : 'out';
+        $amount = max(1, (int)($_POST['amount'] ?? 0));
+        $category = trim($_POST['category'] ?? 'Operasional');
+        $note = trim($_POST['note'] ?? '');
         $stmt = $conn->prepare("INSERT INTO cash_movements (shift_id, type, amount, category, note, actor) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("isisss", $shift['id'], $_POST['type'], $_POST['amount'], $_POST['category'], $_POST['note'], $user['name']);
+        $stmt->bind_param("isisss", $shift['id'], $type, $amount, $category, $note, $user['name']);
         $stmt->execute();
     } elseif ($act === 'close' && $shift) {
-        $expected = (int)$_POST['expected_cash'];
-        $counted  = (int)$_POST['counted_cash'];
+        $rekap = hitung_kas_shift($conn, (int)$shift['id']);
+        $expected = (int)$shift['opening_balance'] + $rekap['salesTunai'] + $rekap['kasIn'] - $rekap['kasOut'];
+        $counted  = max(0, (int)($_POST['counted_cash'] ?? 0));
         $diff     = $counted - $expected;
+        $closingNote = trim($_POST['closing_note'] ?? '');
         $stmt = $conn->prepare("UPDATE cash_shifts SET closed_at=NOW(), expected_cash=?, counted_cash=?, difference=?, closing_note=? WHERE id=?");
-        $stmt->bind_param("iiisi", $expected, $counted, $diff, $_POST['closing_note'], $shift['id']);
+        $stmt->bind_param("iiisi", $expected, $counted, $diff, $closingNote, $shift['id']);
         $stmt->execute();
     }
     header("Location: cash.php");
     exit;
 }
 
-$salesTunai = 0; $kasIn = 0; $kasOut = 0;
+$salesTunai = 0;
+$kasIn = 0;
+$kasOut = 0;
 if ($shift) {
-    $openedAt = $shift['opened_at'];
-    $sid = $shift['id'];
-    $salesTunai = (int)$conn->query("SELECT COALESCE(SUM(paid_amount),0) t FROM orders WHERE payment='Tunai' AND created_at >= '$openedAt'")->fetch_assoc()['t'];
-    $kasIn      = (int)$conn->query("SELECT COALESCE(SUM(amount),0) t FROM cash_movements WHERE shift_id=$sid AND type='in'")->fetch_assoc()['t'];
-    $kasOut     = (int)$conn->query("SELECT COALESCE(SUM(amount),0) t FROM cash_movements WHERE shift_id=$sid AND type='out'")->fetch_assoc()['t'];
+    $rekap = hitung_kas_shift($conn, (int)$shift['id']);
+    $salesTunai = $rekap['salesTunai'];
+    $kasIn      = $rekap['kasIn'];
+    $kasOut     = $rekap['kasOut'];
 }
-$expectedCash = $shift ? ($shift['opening_balance'] + $salesTunai + $kasIn - $kasOut) : 0;
+$expectedCash = $shift ? ((int)$shift['opening_balance'] + $salesTunai + $kasIn - $kasOut) : 0;
 $history = $conn->query("SELECT * FROM cash_shifts ORDER BY id DESC LIMIT 10");
 ?>
 <div class="page">
@@ -56,10 +85,11 @@ $history = $conn->query("SELECT * FROM cash_shifts ORDER BY id DESC LIMIT 10");
         <div style="background:linear-gradient(125deg,#173f34,#267157); color:#fff; padding:32px;">
           <p class="eyebrow" style="color:rgba(255,255,255,.6);">Opening kasir</p>
           <h3 style="font-size:22px; font-weight:800; margin-top:8px;">Hitung uang di laci sebelum transaksi pertama.</h3>
-          <p style="font-size:12px; color:rgba(255,255,255,.7); margin-top:10px;">Setelah shift dibuka, pembayaran Tunai dan arus kas manual otomatis masuk perhitungan saldo sistem.</p>
+          <p style="font-size:12px; color:rgba(255,255,255,.7); margin-top:10px;">Setelah shift dibuka, pembayaran maupun pelunasan Tunai dan arus kas manual otomatis masuk perhitungan saldo sistem.</p>
         </div>
       </section>
       <form method="POST" class="panel panel-pad">
+        <?= csrf_field() ?>
         <input type="hidden" name="act" value="open">
         <h3 class="section-title">Buka shift baru</h3>
         <p class="section-sub">Petugas: <?= htmlspecialchars($user['name']) ?></p>
@@ -80,6 +110,7 @@ $history = $conn->query("SELECT * FROM cash_shifts ORDER BY id DESC LIMIT 10");
 
     <div class="grid-2-col">
       <form method="POST" class="panel panel-pad">
+        <?= csrf_field() ?>
         <input type="hidden" name="act" value="move">
         <h3 class="section-title">Catat kas manual</h3>
         <p class="section-sub">Untuk uang masuk/keluar di luar transaksi order.</p>
@@ -104,9 +135,9 @@ $history = $conn->query("SELECT * FROM cash_shifts ORDER BY id DESC LIMIT 10");
         <button type="submit" class="btn-secondary"><?= icon('plus', 15) ?> Simpan arus kas</button>
       </form>
 
-      <form method="POST" class="panel" style="overflow:hidden;">
+      <form method="POST" class="panel" style="overflow:hidden;" data-confirm="Tutup shift sekarang?">
+        <?= csrf_field() ?>
         <input type="hidden" name="act" value="close">
-        <input type="hidden" name="expected_cash" value="<?= $expectedCash ?>">
         <div style="background:#203f37; color:#fff; padding:20px;">
           <h3 style="font-size:16px; font-weight:800;">Tutup shift</h3>
           <p style="font-size:11px; opacity:0.65;">Kas sistem: <?= money($expectedCash) ?></p>
@@ -120,7 +151,7 @@ $history = $conn->query("SELECT * FROM cash_shifts ORDER BY id DESC LIMIT 10");
             <label class="form-label">Catatan closing</label>
             <textarea name="closing_note" rows="2" class="form-input" placeholder="Wajib jika ada selisih"></textarea>
           </div>
-          <button type="submit" class="btn-primary btn-warm btn-block" onclick="return confirm('Tutup shift sekarang?')"><?= icon('check', 16) ?> Rekonsiliasi & tutup shift</button>
+          <button type="submit" class="btn-primary btn-warm btn-block"><?= icon('check', 16) ?> Rekonsiliasi & tutup shift</button>
         </div>
       </form>
     </div>
